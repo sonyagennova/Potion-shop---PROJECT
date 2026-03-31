@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Potion Shop</title>
+    <style>
+        :root { --parchment: #f4e4bc; --ink: #2c2416; }
+        body { background: #222; color: var(--parchment); font-family: 'Georgia', serif; padding: 20px; }
+        .ledger-container { background: var(--parchment); color: var(--ink); padding: 20px; border-radius: 5px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border-bottom: 1px solid #8b5a2b; padding: 10px; text-align: left; }
+        .controls { margin-bottom: 20px; display: flex; gap: 10px; }
+        button { cursor: pointer; padding: 10px; background: #8b5a2b; color: white; border: none; border-radius: 3px; }
+        button:hover { background: #a06b3e; }
+        label { display: flex; align-items: center; gap: 5px; }
+        input[type="range"] { width: 150px; }
+        .warning {  background-color: #ffeb3b; border: 1px solid #ffc107; border-radius: 3px; 
+            padding: 10px; color: #333; }
+    </style>
+    <script>
+        // You don't have to change anything in this script tag, but if you think reading it will help you, feel free to do so!
+        // You should change the script tag in the <body> that contains the handleData function
+        // You can also add your own code and functions there
+        let internal = {
+            shopOpen: false,
+            openButton: null,
+            eventIntervalInput: null,
+            totalPopularity: 0,
+            allIngredients: [],
+            active_orders: []
+        };
+
+        function toggleOpen() {
+            internal.shopOpen = !internal.shopOpen;
+            if (internal.shopOpen) {
+                internal.openButton.textContent = "Close shop to customers";
+                generateEvent();
+            } else {
+                internal.openButton.textContent = "Open shop to customers";
+            }
+        }
+
+
+        // Ingredients
+        const ingredientAdjectives = [
+            "Ethereal", "Volatile", "Glowing", "Cursed", "Radiant", 
+            "Ancient", "Festering", "Shimmering", "Frozen", "Void-touched"
+        ];
+        const ingredientPrefixes = [
+            "Wisp", "Ghost", "Flame", "Storm", "Aqua", 
+            "Gloom", "Iron", "Bone", "Sun", "Moon"
+        ];
+        const ingredientSuffixes = [
+            "whig", "root", "shard", "vein", "snout", 
+            "leaf", "marrow", "dust", "ichor", "petal"
+        ];
+
+        function generateIngredientName() {
+            let formFactor = Math.random();
+            let hasAdjective = formFactor <= 0.4 || formFactor > 0.9;
+            let hasPrefix = formFactor > 0.4;
+            let adj = hasAdjective ? ingredientAdjectives[Math.floor(Math.random() * ingredientAdjectives.length)] : "";
+            let prefix = hasPrefix ? ingredientPrefixes[Math.floor(Math.random() * ingredientPrefixes.length)] : "";
+            let suffix = ingredientSuffixes[Math.floor(Math.random() * ingredientSuffixes.length)];
+            if (!hasPrefix) suffix = suffix.charAt(0).toUpperCase() + suffix.slice(1); // Capitalize if no prefix
+            return `${adj} ${prefix}${suffix}`.trim();
+        }
+
+        function generateIngredient() {
+            const MAX_POPULARITY = 10;
+            const MAX_RARITY = 5;
+            function hashCode(str) {
+                let hash = 0;
+                for (let i = 0, len = str.length; i < len; i++) {
+                    hash = (hash << 5) - hash + str.charCodeAt(i); hash |= 0;
+                }
+                return Math.abs(hash).toString(16).padStart(8, '0');
+            }
+            function calculatePrice(popularity, rarity) {
+                const BASE_PRICE = 0.5;
+                return BASE_PRICE + popularity * 0.5 + rarity * 0.8;
+            }
+            let name = generateIngredientName();
+            let popularity = Math.floor(Math.random() * MAX_POPULARITY) + 1;
+            let rarity = Math.random() * MAX_RARITY + 1;
+            return {
+                name: name,
+                popularity: popularity,
+                rarity: rarity,
+                price: calculatePrice(popularity, rarity),
+                id: hashCode(name)
+            };
+        }
+
+        function pickRandomIngredient() {
+            const NULL_WEIGHT = 10; // Chance to return null instead of an ingredient, which means creating a new one
+            let randomNum = Math.random() * (internal.totalPopularity + NULL_WEIGHT);
+            if (randomNum >= internal.totalPopularity) {
+                return null; // Signal to create a new ingredient
+            }
+            let cumulative = 0;
+            for (const ingredient of internal.allIngredients) {
+                cumulative += ingredient.popularity;
+                if (randomNum < cumulative) {
+                    return ingredient;
+                }
+            }
+        }
+
+        const AVG_DELIVERY_QUANTITY = 5;
+        function generatePotion() {
+            let numIngredients = Math.random() * 2.2;
+            numIngredients = Math.floor(numIngredients * numIngredients) + 2; // 2 to 6 ingredients, with a bias towards fewer
+            let totalPrice = 0;
+            let ingredients = [];
+            for (let i = 0; i < numIngredients; i++) {
+                let ingredient = pickRandomIngredient();
+                if (!ingredient) {
+                    ingredient = generateIngredient();
+                    ingredient_data = {
+                        type: 'new_ingredient',
+                        id: ingredient.id,
+                        name: ingredient.name,
+                        price: ingredient.price,
+                        quantity: ingredient.popularity * ingredient.rarity * AVG_DELIVERY_QUANTITY
+                            * (Math.random() * 0.5 + 0.75) // Add some randomness to the quantity
+                    }
+                    handleData(ingredient_data);
+                    internal.allIngredients.push(ingredient);
+                    internal.totalPopularity += ingredient.popularity;
+                } else if (Math.random() < 0.3) { // 30% chance to get a new delivery of an existing ingredient
+                    ingredient_data = {
+                        type: 'ingredient_delivery',
+                        id: ingredient.id,
+                        quantity: ingredient.popularity * ingredient.rarity * AVG_DELIVERY_QUANTITY
+                            * (Math.random() * 0.5 + 0.75) // Add some randomness to the quantity
+                    }
+                    handleData(ingredient_data);
+                }
+                let quantity = ingredient.popularity * ingredient.rarity * (Math.random() * 0.5 + 0.75); // Quantity needed for the potion, with some randomness
+                totalPrice += ingredient.price * quantity;
+                ingredients.push({
+                    ingredient: ingredient.id,
+                    quantity: quantity
+                });
+            }
+            return {
+                ingredients: ingredients,
+                price: totalPrice
+            };
+        }
+
+        function generateWizardName() {
+            const firstNames = ["Alaric", "Belladonna", "Cedric", "Daphne", "Eldric", "Fiona", "Gideon", "Helena", "Ignatius", "Jasmine"];
+            const lastNames = ["the Wise", "the Cunning", "the Bold", "the Mysterious", "the Enchanter", "the Sorcerer", "the Alchemist", "the Seer", "the Arcane", "the Mystic"];
+            return `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`;
+        }
+
+        function generateOrder() {
+            let numPotions = Math.random() * 1.7;
+            numPotions = Math.floor(numPotions * numPotions) + 1; // 1 to 3 potions, with a bias towards 1
+            let potions = [];
+            let order_price = 0;
+            for (let i = 0; i < numPotions; i++) {
+                let pot = generatePotion();
+                potions.push(pot.ingredients)
+                order_price += pot.price;
+            }
+            let wizard = generateWizardName();
+            let result = handleData({
+                type: 'new_order',
+                customer: wizard,
+                potions: potions,
+            });
+            if (result) {
+                // order accepted
+                internal.active_orders.push({
+                    customer: wizard,
+                    potions: potions,
+                    price: order_price
+                });
+            }
+        }
+
+        function generatePickup() {
+            if (internal.active_orders.length === 0) return; // No orders to pick up
+            let orderIndex = Math.floor(Math.random() * internal.active_orders.length);
+            let order = internal.active_orders.splice(orderIndex, 1)[0]; // Remove the order from active orders
+            let paid = order.price * (Math.random() * 0.2 + 0.9); // Simulate some variability in payment, between 90% and 110% of the order price
+            let result = handleData({
+                type: 'order_pickup',
+                customer: order.customer,
+                paid: paid
+            });
+            if (paid >= order.price) {
+                if (result) {
+                    document.getElementById('warning').textContent = `Warning: Rejected pickup from ${order.customer} despite sufficient payment! Paid: ${paid.toFixed(2)}, Order Price: ${order.price.toFixed(2)}`;
+                    document.getElementById('warning').style.display = 'block';
+                }
+            } else {
+                if (!result) {
+                    document.getElementById('warning').textContent = `Warning: Accepted pickup from ${order.customer} despite not enough payment! Paid: ${paid.toFixed(2)}, Order Price: ${order.price.toFixed(2)}`;
+                    document.getElementById('warning').style.display = 'block';
+                }
+            }
+        }
+        const MAX_ORDERS = 10;
+        function generateEvent() {
+            if (!internal.shopOpen) return;
+            if (Math.random() < 0.15) {
+                generatePotion(); // Maybe some new ingredient delivery or new ingredient creation
+                // the potion itself is not actually used
+            }
+            let orderChance = 1 - Math.pow(internal.active_orders.length / MAX_ORDERS, 2); // More orders means less chance of new orders
+            if (Math.random() < orderChance) {
+                generateOrder();
+            } else {
+                generatePickup();
+            }
+            let eventInterval = parseFloat(internal.eventIntervalInput.value) * 1000;
+            setTimeout(generateEvent, eventInterval);
+        }
+
+        function clearData() {
+            // Clear all data and reset state
+            internal.totalPopularity = 0;
+            internal.allIngredients = [];
+            internal.active_orders = [];
+            // You may also want to clear any displayed data in the ledger or elsewhere
+            inventory = {};
+            orders = [];
+            document.getElementById('ledger-output').innerHTML = '';
+            document.getElementById('warning').style.display = 'none';
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            internal.openButton = document.getElementById('open');
+            internal.eventIntervalInput = document.getElementById('eventFrequency');
+        });
+    </script>
+</head>
+<body>
+
+    <h1>Potion Shop</h1>
+    <p>Welcome to the Potion Shop! Press the "Open shop to customers" button to start the simulation.</p>
+    <p>
+        Your task is to implement the <code>handleData</code> function in the script to manage the shop's inventory and orders based on incoming data.
+    </p>
+    <p>
+        You should reject orders if there are not enough ingredients in stock to fulfill them, and reject pickups if the customer has not paid enough. 
+    </p>
+    <p>
+        Afterwards, there are a few different directions you could take this project, try to implement some of the following features:
+        <ul>
+            <li>Track the money that the shop has earned from sales, and the money that has been spent on restocking ingredients. Try to judge the shop's profitability over time.</li>
+            <li>Keep a track of past orders and their outcomes, in case the wizard taxman comes by.</li>
+            <li>Implement a way to display the current inventory of ingredients, and the active orders in the ledger section below.</li>
+            <li>Use cookies to persist the shop's state money and inventory data across sessions. (You may also need to do so for the <code>internal</code> data in the head script)</li>
+            <li>Play into the fantasy - add more functionality you might think a potion shop would need!</li>
+        </ul>
+        You don't have to implement all of these features, but the more the store feels like a real potion shop, the better!
+    </p>
+
+    <div class="controls">
+        <button id="open" onclick="toggleOpen()">Open shop to customers</button>
+        <button onclick="clearData()">🧹 Clear All Data</button>
+        <label for="eventFrequency">Event Frequency:</label>
+        <input type="range" id="eventFrequency" min="0.1" max="5" value="1" step="0.1">
+        <div class="warning" id="warning" style="display: none;"> This is a warning message </div>
+    </div>
+
+    <div class="ledger-container">
+        <h3>Active Orders</h3>
+        <div id="ledger-output"></div>
+    </div>
+
+    <script>
+    let inventory = {};
+    let orders = [];
+
+    function handleData(data) {
+        console.log("Received data:", data);
+
+        if (data.type === 'new_ingredient') {
+            inventory[data.id] = {
+                name: data.name,
+                price: data.price,
+                quantity: data.quantity
+            };
+            renderLedger();
+            return;
+        }
+
+        if (data.type === 'ingredient_delivery') {
+            if (inventory[data.id]) {
+                inventory[data.id].quantity += data.quantity;
+            }
+            renderLedger();
+            return;
+        }
+
+        if (data.type === 'new_order') {
+            let needed = {};
+
+            for (const potion of data.potions) {
+                for (const item of potion) {
+                    if (!needed[item.ingredient]) {
+                        needed[item.ingredient] = 0;
+                    }
+                    needed[item.ingredient] += item.quantity;
+                }
+            }
+
+            for (const id in needed) {
+                if (!inventory[id] || inventory[id].quantity < needed[id]) {
+                    renderLedger();
+                    return false;
+                }
+            }
+
+            for (const id in needed) {
+                inventory[id].quantity -= needed[id];
+            }
+
+            let price = 0;
+            for (const id in needed) {
+                price += inventory[id].price * needed[id];
+            }
+
+            orders.push({
+                customer: data.customer,
+                price: price
+            });
+
+            renderLedger();
+            return true;
+        }
+
+        if (data.type === 'order_pickup') {
+            let index = orders.findIndex(order => order.customer === data.customer);
+
+            if (index === -1) {
+                renderLedger();
+                return false;
+            }
+
+            if (data.paid < orders[index].price) {
+                renderLedger();
+                return false;
+            }
+
+            orders.splice(index, 1);
+            renderLedger();
+            return true;
+        }
+    }
+
+    function renderLedger() {
+        const ledger = document.getElementById("ledger-output");
+
+        let ordersHtml = "<h4>Orders</h4>";
+        if (orders.length === 0) {
+            ordersHtml += "<p>No active orders.</p>";
+        } else {
+            ordersHtml += "<table><tr><th>Customer</th><th>Price</th></tr>";
+            for (const order of orders) {
+                ordersHtml += `<tr><td>${order.customer}</td><td>${order.price.toFixed(2)}</td></tr>`;
+            }
+            ordersHtml += "</table>";
+        }
+
+        let inventoryHtml = "<h4>Inventory</h4>";
+        const ingredients = Object.values(inventory);
+
+        if (ingredients.length === 0) {
+            inventoryHtml += "<p>No ingredients.</p>";
+        } else {
+            inventoryHtml += "<table><tr><th>Name</th><th>Quantity</th><th>Price</th></tr>";
+            for (const item of ingredients) {
+                inventoryHtml += `
+                    <tr>
+                        <td>${item.name}</td>
+                        <td>${item.quantity.toFixed(2)}</td>
+                        <td>${item.price.toFixed(2)}</td>
+                    </tr>
+                `;
+            }
+            inventoryHtml += "</table>";
+        }
+
+        ledger.innerHTML = ordersHtml + inventoryHtml;
+    }
+
+</script>
+</body>
+</html>
